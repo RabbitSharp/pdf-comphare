@@ -3,9 +3,20 @@ Streamlit App for PDF Comparison
 """
 import streamlit as st
 import json
+import logging
 from pdf_compare import PDFComparer
 from PIL import ImageDraw
 import io
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -24,10 +35,13 @@ def main():
     # Initialize session state
     if 'exclusion_zones' not in st.session_state:
         st.session_state.exclusion_zones = []
+        logger.info("Initialized exclusion_zones in session state")
     if 'reference_image' not in st.session_state:
         st.session_state.reference_image = None
+        logger.info("Initialized reference_image in session state")
     if 'zoom_factor' not in st.session_state:
         st.session_state.zoom_factor = 2.0
+        logger.info("Initialized zoom_factor in session state with default value 2.0")
 
     # Sidebar for settings
     with st.sidebar:
@@ -42,6 +56,8 @@ def main():
             step=0.5,
             help="Higher values = better quality, but slower"
         )
+        if zoom != st.session_state.zoom_factor:
+            logger.info(f"Zoom factor changed from {st.session_state.zoom_factor} to {zoom}")
         st.session_state.zoom_factor = zoom
 
         st.markdown("#### Comparison Settings")
@@ -169,6 +185,7 @@ def main():
         )
 
         if reference_pdf:
+            logger.info(f"Reference PDF uploaded: {reference_pdf.name}")
             # Convert first page to image
             comparer = PDFComparer(zoom=st.session_state.zoom_factor)
             pdf_bytes = reference_pdf.read()
@@ -177,6 +194,7 @@ def main():
             if images:
                 ref_img = images[0]  # Only first page
                 st.session_state.reference_image = ref_img
+                logger.info(f"Reference image created - Size: {ref_img.width}x{ref_img.height} pixels")
 
                 st.success(f"✅ PDF loaded - Image size: {ref_img.width} x {ref_img.height} pixels")
 
@@ -196,7 +214,7 @@ def main():
                         # Add label
                         draw.text((x1 + 5, y1 + 5), f"Zone {i+1}", fill='red')
 
-                    st.image(preview_img, use_container_width=True, caption="Reference PDF with Exclusion Zones")
+                    st.image(preview_img, width='stretch', caption="Reference PDF with Exclusion Zones")
 
                     # Coordinate system help
                     with st.expander("ℹ️ Help: Coordinate System"):
@@ -242,10 +260,13 @@ def main():
                         submitted = st.form_submit_button("➕ Add Zone")
                         if submitted:
                             if x2 > x1 and y2 > y1:
-                                st.session_state.exclusion_zones.append((int(x1), int(y1), int(x2), int(y2)))
+                                new_zone = (int(x1), int(y1), int(x2), int(y2))
+                                st.session_state.exclusion_zones.append(new_zone)
+                                logger.info(f"Zone added: {new_zone}")
                                 st.success("Zone added!")
                                 st.rerun()
                             else:
+                                logger.warning(f"Invalid zone coordinates attempted: x1={x1}, y1={y1}, x2={x2}, y2={y2}")
                                 st.error("X2 must be greater than X1 and Y2 greater than Y1!")
 
                     st.divider()
@@ -260,7 +281,9 @@ def main():
                                 st.write(f"Y: {zone[1]} → {zone[3]}")
                             with col_del:
                                 if st.button("🗑️", key=f"del_{i}"):
+                                    deleted_zone = st.session_state.exclusion_zones[i]
                                     st.session_state.exclusion_zones.pop(i)
+                                    logger.info(f"Zone {i+1} deleted: {deleted_zone}")
                                     st.rerun()
                             st.divider()
 
@@ -285,15 +308,20 @@ def main():
                     if uploaded_zones:
                         try:
                             zones_data = json.load(uploaded_zones)
+                            logger.info(f"Importing {len(zones_data)} zones from {uploaded_zones.name}")
                             st.session_state.exclusion_zones = zones_data
+                            logger.info(f"Successfully imported zones: {zones_data}")
                             st.success(f"{len(zones_data)} zones imported!")
                             st.rerun()
                         except Exception as e:
+                            logger.error(f"Error importing zones from {uploaded_zones.name}: {str(e)}", exc_info=True)
                             st.error(f"Error importing: {e}")
 
                     # Clear zones
                     if st.button("🗑️ Clear All Zones"):
+                        zone_count = len(st.session_state.exclusion_zones)
                         st.session_state.exclusion_zones = []
+                        logger.info(f"Cleared all {zone_count} zones")
                         st.rerun()
 
     # Tab 2: Compare PDFs
@@ -323,6 +351,7 @@ def main():
 
         # Compare PDFs when both are uploaded
         if pdf1 is not None and pdf2 is not None:
+            logger.info(f"Starting PDF comparison - PDF1: {pdf1.name}, PDF2: {pdf2.name}")
             with st.spinner("Comparing PDFs..."):
                 try:
                     # Read PDF bytes
@@ -335,6 +364,7 @@ def main():
                     # Get page counts
                     pages1 = comparer.get_page_count(pdf1_bytes)
                     pages2 = comparer.get_page_count(pdf2_bytes)
+                    logger.info(f"Page counts - PDF1: {pages1} pages, PDF2: {pages2} pages")
 
                     # Parse skip pages input - Manual page numbers
                     skip_pages_1 = []
@@ -343,24 +373,30 @@ def main():
                     if skip_pages_1_input.strip():
                         try:
                             skip_pages_1 = [int(p.strip()) for p in skip_pages_1_input.split(',') if p.strip()]
+                            logger.info(f"Manual skip pages for PDF1: {skip_pages_1}")
                             # Validate page numbers
                             invalid_pages = [p for p in skip_pages_1 if p < 1 or p > pages1]
                             if invalid_pages:
+                                logger.warning(f"Invalid page numbers for PDF1: {invalid_pages}")
                                 st.warning(f"⚠️ Invalid page numbers for PDF 1: {invalid_pages}. Valid range: 1-{pages1}")
                                 skip_pages_1 = [p for p in skip_pages_1 if 1 <= p <= pages1]
-                        except ValueError:
+                        except ValueError as e:
+                            logger.error(f"Invalid format for PDF1 skip pages: {skip_pages_1_input}", exc_info=True)
                             st.error("❌ Invalid format for PDF 1 skip pages. Please use comma-separated numbers (e.g., 1,3,5)")
                             skip_pages_1 = []
 
                     if skip_pages_2_input.strip():
                         try:
                             skip_pages_2 = [int(p.strip()) for p in skip_pages_2_input.split(',') if p.strip()]
+                            logger.info(f"Manual skip pages for PDF2: {skip_pages_2}")
                             # Validate page numbers
                             invalid_pages = [p for p in skip_pages_2 if p < 1 or p > pages2]
                             if invalid_pages:
+                                logger.warning(f"Invalid page numbers for PDF2: {invalid_pages}")
                                 st.warning(f"⚠️ Invalid page numbers for PDF 2: {invalid_pages}. Valid range: 1-{pages2}")
                                 skip_pages_2 = [p for p in skip_pages_2 if 1 <= p <= pages2]
-                        except ValueError:
+                        except ValueError as e:
+                            logger.error(f"Invalid format for PDF2 skip pages: {skip_pages_2_input}", exc_info=True)
                             st.error("❌ Invalid format for PDF 2 skip pages. Please use comma-separated numbers (e.g., 1,3,5)")
                             skip_pages_2 = []
 
@@ -371,22 +407,29 @@ def main():
                     if skip_text_1_input.strip():
                         search_strings_1 = [line.strip() for line in skip_text_1_input.split('\n') if line.strip()]
                         if search_strings_1:
+                            logger.info(f"Text-based skip for PDF1 - searching for: {search_strings_1}")
                             with st.spinner("Analyzing PDF 1 for text patterns..."):
                                 text_based_skip_1 = comparer.find_pages_with_text(pdf1_bytes, search_strings_1, case_sensitive)
+                            logger.info(f"Text-based skip found pages in PDF1: {sorted(text_based_skip_1)}")
                             if text_based_skip_1:
                                 st.info(f"📝 Found matching text in PDF 1 on pages: {sorted(text_based_skip_1)}")
 
                     if skip_text_2_input.strip():
                         search_strings_2 = [line.strip() for line in skip_text_2_input.split('\n') if line.strip()]
                         if search_strings_2:
+                            logger.info(f"Text-based skip for PDF2 - searching for: {search_strings_2}")
                             with st.spinner("Analyzing PDF 2 for text patterns..."):
                                 text_based_skip_2 = comparer.find_pages_with_text(pdf2_bytes, search_strings_2, case_sensitive)
+                            logger.info(f"Text-based skip found pages in PDF2: {sorted(text_based_skip_2)}")
                             if text_based_skip_2:
                                 st.info(f"📝 Found matching text in PDF 2 on pages: {sorted(text_based_skip_2)}")
 
                     # Combine manual and text-based skip lists (remove duplicates)
                     skip_pages_1 = sorted(set(skip_pages_1 + text_based_skip_1))
                     skip_pages_2 = sorted(set(skip_pages_2 + text_based_skip_2))
+
+                    logger.info(f"Final skip pages - PDF1: {skip_pages_1}, PDF2: {skip_pages_2}")
+                    logger.info(f"Exclusion zones to apply: {len(st.session_state.exclusion_zones)}")
 
                     # Show info
                     info_text = f"📊 PDF 1: {pages1} page(s) | PDF 2: {pages2} page(s)"
@@ -399,6 +442,7 @@ def main():
                     st.info(info_text)
 
                     # Compare PDFs
+                    logger.info("Starting PDF comparison...")
                     results = comparer.compare_pdfs(
                         pdf1_bytes, pdf2_bytes,
                         sensitivity, min_area,
@@ -406,9 +450,11 @@ def main():
                         skip_pages_pdf2=skip_pages_2,
                         exclusion_zones=st.session_state.exclusion_zones
                     )
+                    logger.info(f"Comparison completed - {len(results)} page comparisons generated")
 
                     # Calculate overall difference
                     avg_diff = sum(r[3] for r in results) / len(results) if results else 0
+                    logger.info(f"Average deviation: {avg_diff:.2f}%")
 
                     # Show overall statistics
                     st.markdown("---")
@@ -454,22 +500,24 @@ def main():
                             cols = st.columns(3)
                             with cols[0]:
                                 st.markdown("**PDF 1**")
-                                st.image(img1, use_container_width=True)
+                                st.image(img1, width='stretch')
                             with cols[1]:
                                 st.markdown("**PDF 2**")
-                                st.image(img2, use_container_width=True)
+                                st.image(img2, width='stretch')
                             with cols[2]:
                                 st.markdown("**Differences**")
-                                st.image(diff_img, use_container_width=True)
+                                st.image(diff_img, width='stretch')
                         else:
                             st.markdown("**Differences highlighted**")
-                            st.image(diff_img, use_container_width=True)
+                            st.image(diff_img, width='stretch')
 
                         st.markdown("---")
 
                     st.success("✅ Comparison completed!")
+                    logger.info("Comparison results displayed successfully")
 
                 except Exception as e:
+                    logger.error(f"Error during PDF comparison: {str(e)}", exc_info=True)
                     st.error(f"❌ Error comparing PDFs: {str(e)}")
                     st.exception(e)
 
