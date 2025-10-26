@@ -480,7 +480,7 @@ def main():
                     with metric_cols[1]:
                         st.metric("Number of Pages Compared", len(results))
                     with metric_cols[2]:
-                        identical_pages = sum(1 for r in results if r[3] < 1.0)
+                        identical_pages = sum(1 for r in results if r[3] == 0.0)
                         st.metric("Identical Pages", f"{identical_pages}/{len(results)}")
 
                     st.markdown("---")
@@ -499,15 +499,21 @@ def main():
 
                         st.subheader(page_header)
 
-                        # Color code based on difference
-                        if diff_pct < 1.0:
-                            st.success(f"✅ Deviation: {diff_pct:.2f}% (Nearly identical)")
-                        elif diff_pct < 5.0:
+                        # Determine deviation level and Color code based on difference
+                        if diff_pct == 0.0:
+                            st.success(f"✅ Deviation: {diff_pct:.2f}% (Identical)")
+                            deviation_level = "identical"
+                        elif diff_pct < 0.3:
                             st.info(f"ℹ️ Deviation: {diff_pct:.2f}% (Minor differences)")
-                        elif diff_pct < 15.0:
+                            deviation_level = "minor"
+                        elif diff_pct < 2.0:
                             st.warning(f"⚠️ Deviation: {diff_pct:.2f}% (Moderate differences)")
+                            deviation_level = "moderate"
                         else:
                             st.error(f"❌ Deviation: {diff_pct:.2f}% (Major differences)")
+                            deviation_level = "major"
+
+                        logger.info(f"Page {idx + 1} - Deviation: {diff_pct:.2f}% ({deviation_level})")
 
                         # Display images
                         if show_originals:
