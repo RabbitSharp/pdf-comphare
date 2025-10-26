@@ -191,7 +191,8 @@ class PDFComparer:
         return regions
 
     def compare_pdfs(self, pdf1_bytes: bytes, pdf2_bytes: bytes,
-                    sensitivity: float = 50.0, min_area: int = 100) -> List[Tuple[Image.Image, Image.Image, Image.Image, float]]:
+                    sensitivity: float = 50.0, min_area: int = 100,
+                    skip_pages_pdf1: List[int] = None, skip_pages_pdf2: List[int] = None) -> List[Tuple[Image.Image, Image.Image, Image.Image, float, int, int]]:
         """
         Compare two PDFs page by page
 
@@ -200,30 +201,49 @@ class PDFComparer:
             pdf2_bytes: Second PDF as bytes
             sensitivity: Threshold for detecting differences (0-255, higher = less sensitive)
             min_area: Minimum area in pixels for a difference region
+            skip_pages_pdf1: List of page numbers (1-based) to skip from PDF 1
+            skip_pages_pdf2: List of page numbers (1-based) to skip from PDF 2
 
         Returns:
-            List of tuples (img1, img2, diff_img, diff_percentage) for each page
+            List of tuples (img1, img2, diff_img, diff_percentage, page_num_pdf1, page_num_pdf2) for each page
         """
+        if skip_pages_pdf1 is None:
+            skip_pages_pdf1 = []
+        if skip_pages_pdf2 is None:
+            skip_pages_pdf2 = []
+
+        # Convert to 0-based indexing for internal use
+        skip_pages_pdf1_zero = set(p - 1 for p in skip_pages_pdf1)
+        skip_pages_pdf2_zero = set(p - 1 for p in skip_pages_pdf2)
+
         images1 = self.pdf_to_images(pdf1_bytes)
         images2 = self.pdf_to_images(pdf2_bytes)
 
+        # Filter out skipped pages
+        filtered_images1 = [(i, img) for i, img in enumerate(images1) if i not in skip_pages_pdf1_zero]
+        filtered_images2 = [(i, img) for i, img in enumerate(images2) if i not in skip_pages_pdf2_zero]
+
         # Compare page by page
-        max_pages = max(len(images1), len(images2))
+        max_pages = max(len(filtered_images1), len(filtered_images2))
         results = []
 
         for i in range(max_pages):
             # Handle PDFs with different page counts
-            if i >= len(images1):
-                img1 = Image.new('RGB', images2[i].size, 'white')
+            if i >= len(filtered_images1):
+                page_num_pdf1 = None
+                img1 = Image.new('RGB', filtered_images2[i][1].size, 'white')
             else:
-                img1 = images1[i]
+                page_num_pdf1 = filtered_images1[i][0] + 1  # Convert back to 1-based
+                img1 = filtered_images1[i][1]
 
-            if i >= len(images2):
-                img2 = Image.new('RGB', images1[i].size, 'white')
+            if i >= len(filtered_images2):
+                page_num_pdf2 = None
+                img2 = Image.new('RGB', filtered_images1[i][1].size, 'white')
             else:
-                img2 = images2[i]
+                page_num_pdf2 = filtered_images2[i][0] + 1  # Convert back to 1-based
+                img2 = filtered_images2[i][1]
 
             diff_img, diff_pct = self.compare_images(img1, img2, sensitivity, min_area)
-            results.append((img1, img2, diff_img, diff_pct))
+            results.append((img1, img2, diff_img, diff_pct, page_num_pdf1, page_num_pdf2))
 
         return results

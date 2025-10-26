@@ -78,6 +78,24 @@ def main():
         )
 
         st.markdown("---")
+        st.markdown("### 📄 Page Selection")
+        st.markdown("Select pages to skip from comparison (comma-separated, e.g., 1,3,5):")
+
+        skip_pages_1_input = st.text_input(
+            "Skip pages from PDF 1",
+            value="",
+            help="Enter page numbers to skip from the first PDF, separated by commas",
+            key="skip_pdf1"
+        )
+
+        skip_pages_2_input = st.text_input(
+            "Skip pages from PDF 2",
+            value="",
+            help="Enter page numbers to skip from the second PDF, separated by commas",
+            key="skip_pdf2"
+        )
+
+        st.markdown("---")
         st.markdown("### ℹ️ Info")
         st.markdown("""
         **Technologies used:**
@@ -90,11 +108,13 @@ def main():
         - Differences highlighted in red
         - Percentage deviation
         - Adjustable sensitivity
+        - Skip individual pages from comparison
         
         **Tips for reducing false positives:**
         - Increase sensitivity threshold (60-80)
         - Increase minimum area (200-300)
         - Use higher zoom for better rendering
+        - Skip cover pages or dynamic content pages
         """)
 
     # Compare PDFs when both are uploaded
@@ -112,11 +132,45 @@ def main():
                 pages1 = comparer.get_page_count(pdf1_bytes)
                 pages2 = comparer.get_page_count(pdf2_bytes)
 
+                # Parse skip pages input
+                skip_pages_1 = []
+                skip_pages_2 = []
+
+                if skip_pages_1_input.strip():
+                    try:
+                        skip_pages_1 = [int(p.strip()) for p in skip_pages_1_input.split(',') if p.strip()]
+                        # Validate page numbers
+                        invalid_pages = [p for p in skip_pages_1 if p < 1 or p > pages1]
+                        if invalid_pages:
+                            st.warning(f"⚠️ Invalid page numbers for PDF 1: {invalid_pages}. Valid range: 1-{pages1}")
+                            skip_pages_1 = [p for p in skip_pages_1 if 1 <= p <= pages1]
+                    except ValueError:
+                        st.error("❌ Invalid format for PDF 1 skip pages. Please use comma-separated numbers (e.g., 1,3,5)")
+                        skip_pages_1 = []
+
+                if skip_pages_2_input.strip():
+                    try:
+                        skip_pages_2 = [int(p.strip()) for p in skip_pages_2_input.split(',') if p.strip()]
+                        # Validate page numbers
+                        invalid_pages = [p for p in skip_pages_2 if p < 1 or p > pages2]
+                        if invalid_pages:
+                            st.warning(f"⚠️ Invalid page numbers for PDF 2: {invalid_pages}. Valid range: 1-{pages2}")
+                            skip_pages_2 = [p for p in skip_pages_2 if 1 <= p <= pages2]
+                    except ValueError:
+                        st.error("❌ Invalid format for PDF 2 skip pages. Please use comma-separated numbers (e.g., 1,3,5)")
+                        skip_pages_2 = []
+
                 # Show info
-                st.info(f"📊 PDF 1: {pages1} page(s) | PDF 2: {pages2} page(s)")
+                info_text = f"📊 PDF 1: {pages1} page(s) | PDF 2: {pages2} page(s)"
+                if skip_pages_1:
+                    info_text += f" | Skipping from PDF 1: {sorted(skip_pages_1)}"
+                if skip_pages_2:
+                    info_text += f" | Skipping from PDF 2: {sorted(skip_pages_2)}"
+                st.info(info_text)
 
                 # Compare PDFs
-                results = comparer.compare_pdfs(pdf1_bytes, pdf2_bytes, sensitivity, min_area)
+                results = comparer.compare_pdfs(pdf1_bytes, pdf2_bytes, sensitivity, min_area,
+                                              skip_pages_pdf1=skip_pages_1, skip_pages_pdf2=skip_pages_2)
 
                 # Calculate overall difference
                 avg_diff = sum(r[3] for r in results) / len(results) if results else 0
@@ -129,7 +183,7 @@ def main():
                 with metric_cols[0]:
                     st.metric("Average Deviation", f"{avg_diff:.2f}%")
                 with metric_cols[1]:
-                    st.metric("Number of Pages", len(results))
+                    st.metric("Number of Pages Compared", len(results))
                 with metric_cols[2]:
                     identical_pages = sum(1 for r in results if r[3] < 1.0)
                     st.metric("Identical Pages", f"{identical_pages}/{len(results)}")
@@ -137,8 +191,18 @@ def main():
                 st.markdown("---")
 
                 # Display results for each page
-                for idx, (img1, img2, diff_img, diff_pct) in enumerate(results):
-                    st.subheader(f"Page {idx + 1}")
+                for idx, (img1, img2, diff_img, diff_pct, page_num_pdf1, page_num_pdf2) in enumerate(results):
+                    # Create page header based on which pages are being compared
+                    if page_num_pdf1 is not None and page_num_pdf2 is not None:
+                        page_header = f"Comparison {idx + 1}: PDF 1 Page {page_num_pdf1} ↔ PDF 2 Page {page_num_pdf2}"
+                    elif page_num_pdf1 is not None:
+                        page_header = f"Comparison {idx + 1}: PDF 1 Page {page_num_pdf1} ↔ PDF 2 (empty)"
+                    elif page_num_pdf2 is not None:
+                        page_header = f"Comparison {idx + 1}: PDF 1 (empty) ↔ PDF 2 Page {page_num_pdf2}"
+                    else:
+                        page_header = f"Comparison {idx + 1}"
+
+                    st.subheader(page_header)
 
                     # Color code based on difference
                     if diff_pct < 1.0:
