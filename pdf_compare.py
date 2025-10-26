@@ -110,7 +110,8 @@ class PDFComparer:
         return matching_pages
 
     def compare_images(self, img1: Image.Image, img2: Image.Image,
-                      sensitivity: float = 50.0, min_area: int = 100) -> Tuple[Image.Image, float]:
+                      sensitivity: float = 50.0, min_area: int = 100,
+                      exclusion_zones: List[Tuple[int, int, int, int]] = None) -> Tuple[Image.Image, float]:
         """
         Compare two images and create a difference visualization with improved false positive reduction
 
@@ -119,10 +120,13 @@ class PDFComparer:
             img2: Second image
             sensitivity: Threshold for detecting differences (0-255, higher = less sensitive)
             min_area: Minimum area in pixels for a difference region to be considered significant
+            exclusion_zones: List of (x1, y1, x2, y2) tuples defining areas to exclude from comparison
 
         Returns:
             Tuple of (difference image with highlights, difference percentage)
         """
+        if exclusion_zones is None:
+            exclusion_zones = []
         # Ensure both images have the same size
         if img1.size != img2.size:
             # Resize to the larger dimensions
@@ -171,6 +175,16 @@ class PDFComparer:
         mask = binary_opening(mask, structure=np.ones((3, 3)))
         # Fill small holes
         mask = binary_closing(mask, structure=np.ones((5, 5)))
+
+        # Apply exclusion zones - set these areas to False (no difference)
+        for zone in exclusion_zones:
+            x1, y1, x2, y2 = zone
+            # Ensure coordinates are within bounds
+            x1 = max(0, min(x1, mask.shape[1]))
+            x2 = max(0, min(x2, mask.shape[1]))
+            y1 = max(0, min(y1, mask.shape[0]))
+            y2 = max(0, min(y2, mask.shape[0]))
+            mask[y1:y2, x1:x2] = False
 
         # Calculate difference percentage based on significant differences only
         significant_diff_pixels = np.sum(mask)
@@ -249,7 +263,8 @@ class PDFComparer:
 
     def compare_pdfs(self, pdf1_bytes: bytes, pdf2_bytes: bytes,
                     sensitivity: float = 50.0, min_area: int = 100,
-                    skip_pages_pdf1: List[int] = None, skip_pages_pdf2: List[int] = None) -> List[Tuple[Image.Image, Image.Image, Image.Image, float, int, int]]:
+                    skip_pages_pdf1: List[int] = None, skip_pages_pdf2: List[int] = None,
+                    exclusion_zones: List[Tuple[int, int, int, int]] = None) -> List[Tuple[Image.Image, Image.Image, Image.Image, float, int, int]]:
         """
         Compare two PDFs page by page
 
@@ -260,6 +275,7 @@ class PDFComparer:
             min_area: Minimum area in pixels for a difference region
             skip_pages_pdf1: List of page numbers (1-based) to skip from PDF 1
             skip_pages_pdf2: List of page numbers (1-based) to skip from PDF 2
+            exclusion_zones: List of (x1, y1, x2, y2) tuples defining areas to exclude from comparison
 
         Returns:
             List of tuples (img1, img2, diff_img, diff_percentage, page_num_pdf1, page_num_pdf2) for each page
@@ -300,7 +316,7 @@ class PDFComparer:
                 page_num_pdf2 = filtered_images2[i][0] + 1  # Convert back to 1-based
                 img2 = filtered_images2[i][1]
 
-            diff_img, diff_pct = self.compare_images(img1, img2, sensitivity, min_area)
+            diff_img, diff_pct = self.compare_images(img1, img2, sensitivity, min_area, exclusion_zones)
             results.append((img1, img2, diff_img, diff_pct, page_num_pdf1, page_num_pdf2))
 
         return results
