@@ -79,21 +79,61 @@ def main():
 
         st.markdown("---")
         st.markdown("### 📄 Page Selection")
-        st.markdown("Select pages to skip from comparison (comma-separated, e.g., 1,3,5):")
 
-        skip_pages_1_input = st.text_input(
-            "Skip pages from PDF 1",
-            value="",
-            help="Enter page numbers to skip from the first PDF, separated by commas",
-            key="skip_pdf1"
+        # Tab-based selection method
+        skip_method = st.radio(
+            "Skip method",
+            ["Manual Page Numbers", "Text-Based", "Both"],
+            help="Choose how to select pages to skip"
         )
 
-        skip_pages_2_input = st.text_input(
-            "Skip pages from PDF 2",
-            value="",
-            help="Enter page numbers to skip from the second PDF, separated by commas",
-            key="skip_pdf2"
-        )
+        if skip_method in ["Manual Page Numbers", "Both"]:
+            st.markdown("**Manual Selection** (comma-separated, e.g., 1,3,5):")
+            skip_pages_1_input = st.text_input(
+                "Skip pages from PDF 1",
+                value="",
+                help="Enter page numbers to skip from the first PDF, separated by commas",
+                key="skip_pdf1"
+            )
+
+            skip_pages_2_input = st.text_input(
+                "Skip pages from PDF 2",
+                value="",
+                help="Enter page numbers to skip from the second PDF, separated by commas",
+                key="skip_pdf2"
+            )
+        else:
+            skip_pages_1_input = ""
+            skip_pages_2_input = ""
+
+        if skip_method in ["Text-Based", "Both"]:
+            st.markdown("**Text-Based Selection:**")
+
+            skip_text_1_input = st.text_area(
+                "Skip pages containing (PDF 1)",
+                value="",
+                height=80,
+                help="Enter text strings (one per line). Pages containing any of these strings will be skipped.",
+                key="skip_text_pdf1"
+            )
+
+            skip_text_2_input = st.text_area(
+                "Skip pages containing (PDF 2)",
+                value="",
+                height=80,
+                help="Enter text strings (one per line). Pages containing any of these strings will be skipped.",
+                key="skip_text_pdf2"
+            )
+
+            case_sensitive = st.checkbox(
+                "Case-sensitive search",
+                value=False,
+                help="Whether the text search should be case-sensitive"
+            )
+        else:
+            skip_text_1_input = ""
+            skip_text_2_input = ""
+            case_sensitive = False
 
         st.markdown("---")
         st.markdown("### ℹ️ Info")
@@ -108,13 +148,19 @@ def main():
         - Differences highlighted in red
         - Percentage deviation
         - Adjustable sensitivity
-        - Skip individual pages from comparison
+        - Skip pages manually or by text content
         
         **Tips for reducing false positives:**
         - Increase sensitivity threshold (60-80)
         - Increase minimum area (200-300)
         - Use higher zoom for better rendering
         - Skip cover pages or dynamic content pages
+        - Use text-based skip for pages with dates/timestamps
+        
+        **Text-based skip examples:**
+        - "DRAFT" - skip all pages containing "DRAFT"
+        - "Generated on" - skip pages with timestamps
+        - "Page 1 of" - skip cover/header pages
         """)
 
     # Compare PDFs when both are uploaded
@@ -132,7 +178,7 @@ def main():
                 pages1 = comparer.get_page_count(pdf1_bytes)
                 pages2 = comparer.get_page_count(pdf2_bytes)
 
-                # Parse skip pages input
+                # Parse skip pages input - Manual page numbers
                 skip_pages_1 = []
                 skip_pages_2 = []
 
@@ -160,12 +206,36 @@ def main():
                         st.error("❌ Invalid format for PDF 2 skip pages. Please use comma-separated numbers (e.g., 1,3,5)")
                         skip_pages_2 = []
 
+                # Parse text-based skip criteria
+                text_based_skip_1 = []
+                text_based_skip_2 = []
+
+                if skip_text_1_input.strip():
+                    search_strings_1 = [line.strip() for line in skip_text_1_input.split('\n') if line.strip()]
+                    if search_strings_1:
+                        with st.spinner("Analyzing PDF 1 for text patterns..."):
+                            text_based_skip_1 = comparer.find_pages_with_text(pdf1_bytes, search_strings_1, case_sensitive)
+                        if text_based_skip_1:
+                            st.info(f"📝 Found matching text in PDF 1 on pages: {sorted(text_based_skip_1)}")
+
+                if skip_text_2_input.strip():
+                    search_strings_2 = [line.strip() for line in skip_text_2_input.split('\n') if line.strip()]
+                    if search_strings_2:
+                        with st.spinner("Analyzing PDF 2 for text patterns..."):
+                            text_based_skip_2 = comparer.find_pages_with_text(pdf2_bytes, search_strings_2, case_sensitive)
+                        if text_based_skip_2:
+                            st.info(f"📝 Found matching text in PDF 2 on pages: {sorted(text_based_skip_2)}")
+
+                # Combine manual and text-based skip lists (remove duplicates)
+                skip_pages_1 = sorted(set(skip_pages_1 + text_based_skip_1))
+                skip_pages_2 = sorted(set(skip_pages_2 + text_based_skip_2))
+
                 # Show info
                 info_text = f"📊 PDF 1: {pages1} page(s) | PDF 2: {pages2} page(s)"
                 if skip_pages_1:
-                    info_text += f" | Skipping from PDF 1: {sorted(skip_pages_1)}"
+                    info_text += f" | Skipping from PDF 1: {skip_pages_1}"
                 if skip_pages_2:
-                    info_text += f" | Skipping from PDF 2: {sorted(skip_pages_2)}"
+                    info_text += f" | Skipping from PDF 2: {skip_pages_2}"
                 st.info(info_text)
 
                 # Compare PDFs

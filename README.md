@@ -12,6 +12,38 @@ A simple yet powerful tool for comparing two PDF files with visual highlighting 
 - 🎯 Configurable sensitivity to reduce false positives
 - 🔬 Minimum area threshold to filter noise
 - 🖼️ Optional: Display original documents
+- 📑 **Skip pages manually** by page number
+- 🔤 **Skip pages automatically** by text content
+
+## Page Skip Features
+
+### Manual Page Selection
+- Enter specific page numbers to exclude from comparison
+- Comma-separated format (e.g., "1,3,5")
+- Different pages can be skipped from each PDF
+
+### Text-Based Page Skip (NEW!)
+- Automatically skip pages containing specific text patterns
+- Enter search strings (one per line)
+- Case-sensitive or case-insensitive search
+- Perfect for excluding pages with:
+  - Timestamps or dates
+  - Version numbers
+  - "DRAFT" or "CONFIDENTIAL" watermarks
+  - Dynamic content
+  - Cover pages or table of contents
+
+### Combined Approach
+- Use both manual and text-based methods together
+- Automatically combines and deduplicates skip lists
+- Provides maximum flexibility
+
+### Limitations
+
+- **OCR not supported**: Only works with text-based PDFs (not scanned images)
+- **Exact substring**: Must match the text exactly as it appears
+- **No regex**: Simple substring matching (no regular expressions)
+- **Page-level**: Skips entire pages, not partial content
 
 ## Accuracy Improvements
 
@@ -96,6 +128,10 @@ streamlit run app.py
    - **Sensitivity Threshold**: Higher values reduce false positives (try 60-80)
    - **Minimum Difference Area**: Filters out small rendering artifacts (try 200-300)
    - **Show originals**: Toggle display of original PDFs
+   - **Page Selection**: Choose skip method (Manual, Text-Based, or Both)
+     - Manual: Enter page numbers to skip (e.g., "1,3,5")
+     - Text-Based: Enter text patterns to find and skip pages
+     - Both: Combine both methods
 
 5. Results:
    - Overall statistics with average deviation
@@ -122,6 +158,13 @@ streamlit run app.py
 - **For many pages**: Disable "Show originals" for better overview
 - **To reduce false positives**: 
   - Increase sensitivity threshold to 60-80
+  - Increase minimum area to 200-300
+  - Use text-based skip for pages with dynamic content (dates, timestamps)
+  - Skip cover pages and pages with version numbers
+- **For consistent comparisons**: 
+  - Skip pages with "Generated on", "Created:", or other timestamps
+  - Skip pages containing "DRAFT" or "CONFIDENTIAL" watermarks
+  - Use the same skip settings when comparing multiple document versions
   - Increase minimum area to 200-300 pixels
   - Use higher zoom (2.5-3.0) for better rendering accuracy
 - **For very similar PDFs**: Lower sensitivity to 30-40 to catch subtle differences

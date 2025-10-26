@@ -52,6 +52,63 @@ class PDFComparer:
         doc.close()
         return count
 
+    def extract_text_from_page(self, pdf_bytes: bytes, page_num: int) -> str:
+        """
+        Extract text from a specific page
+
+        Args:
+            pdf_bytes: PDF file as bytes
+            page_num: Page number (0-based)
+
+        Returns:
+            Extracted text from the page
+        """
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if page_num < 0 or page_num >= len(doc):
+            doc.close()
+            return ""
+
+        page = doc[page_num]
+        text = page.get_text()
+        doc.close()
+        return text
+
+    def find_pages_with_text(self, pdf_bytes: bytes, search_strings: List[str],
+                            case_sensitive: bool = False) -> List[int]:
+        """
+        Find all pages containing any of the specified search strings
+
+        Args:
+            pdf_bytes: PDF file as bytes
+            search_strings: List of strings to search for
+            case_sensitive: Whether the search should be case-sensitive
+
+        Returns:
+            List of page numbers (1-based) that contain any of the search strings
+        """
+        if not search_strings:
+            return []
+
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        matching_pages = []
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+
+            if not case_sensitive:
+                text = text.lower()
+                search_list = [s.lower() for s in search_strings]
+            else:
+                search_list = search_strings
+
+            # Check if any search string is in the page text
+            if any(search_str in text for search_str in search_list):
+                matching_pages.append(page_num + 1)  # Convert to 1-based
+
+        doc.close()
+        return matching_pages
+
     def compare_images(self, img1: Image.Image, img2: Image.Image,
                       sensitivity: float = 50.0, min_area: int = 100) -> Tuple[Image.Image, float]:
         """
