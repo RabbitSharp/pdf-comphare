@@ -51,6 +51,26 @@ def main():
             help="Higher values = better quality, but slower"
         )
 
+        st.markdown("#### Comparison Settings")
+
+        sensitivity = st.slider(
+            "Sensitivity Threshold",
+            min_value=10.0,
+            max_value=100.0,
+            value=50.0,
+            step=5.0,
+            help="Higher values = less sensitive (fewer false positives). Try 60-80 to reduce noise."
+        )
+
+        min_area = st.slider(
+            "Minimum Difference Area (pixels)",
+            min_value=20,
+            max_value=500,
+            value=100,
+            step=20,
+            help="Ignore small differences below this size. Helps filter out minor rendering artifacts."
+        )
+
         show_originals = st.checkbox(
             "Show originals",
             value=True,
@@ -69,6 +89,12 @@ def main():
         - Page-by-page comparison
         - Differences highlighted in red
         - Percentage deviation
+        - Adjustable sensitivity
+        
+        **Tips for reducing false positives:**
+        - Increase sensitivity threshold (60-80)
+        - Increase minimum area (200-300)
+        - Use higher zoom for better rendering
         """)
 
     # Compare PDFs when both are uploaded
@@ -90,7 +116,7 @@ def main():
                 st.info(f"📊 PDF 1: {pages1} page(s) | PDF 2: {pages2} page(s)")
 
                 # Compare PDFs
-                results = comparer.compare_pdfs(pdf1_bytes, pdf2_bytes)
+                results = comparer.compare_pdfs(pdf1_bytes, pdf2_bytes, sensitivity, min_area)
 
                 # Calculate overall difference
                 avg_diff = sum(r[3] for r in results) / len(results) if results else 0

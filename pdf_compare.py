@@ -5,8 +5,8 @@ Compares two PDF files and highlights the differences
 import io
 import fitz  # PyMuPDF
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw
-from typing import Tuple, List, Optional
+from PIL import Image, ImageDraw
+from typing import Tuple, List
 
 
 class PDFComparer:
@@ -52,13 +52,16 @@ class PDFComparer:
         doc.close()
         return count
 
-    def compare_images(self, img1: Image.Image, img2: Image.Image) -> Tuple[Image.Image, float]:
+    def compare_images(self, img1: Image.Image, img2: Image.Image,
+                      sensitivity: float = 50.0, min_area: int = 100) -> Tuple[Image.Image, float]:
         """
-        Compare two images and create a difference visualization
+        Compare two images and create a difference visualization with improved false positive reduction
 
         Args:
             img1: First image
             img2: Second image
+            sensitivity: Threshold for detecting differences (0-255, higher = less sensitive)
+            min_area: Minimum area in pixels for a difference region to be considered significant
 
         Returns:
             Tuple of (difference image with highlights, difference percentage)
@@ -85,48 +88,58 @@ class PDFComparer:
         if img2.mode != 'RGB':
             img2 = img2.convert('RGB')
 
-        # Calculate pixel-wise difference
-        diff = ImageChops.difference(img1, img2)
+        # Convert to numpy arrays for advanced processing
+        img1_np = np.array(img1, dtype=np.float32)
+        img2_np = np.array(img2, dtype=np.float32)
 
-        # Convert to numpy for analysis
-        diff_np = np.array(diff)
+        # Calculate perceptual difference using weighted RGB channels
+        # Human eye is more sensitive to green, then red, then blue
+        diff_r = np.abs(img1_np[:, :, 0] - img2_np[:, :, 0]) * 0.299
+        diff_g = np.abs(img1_np[:, :, 1] - img2_np[:, :, 1]) * 0.587
+        diff_b = np.abs(img1_np[:, :, 2] - img2_np[:, :, 2]) * 0.114
 
-        # Calculate difference percentage
-        total_pixels = diff_np.shape[0] * diff_np.shape[1] * diff_np.shape[2]
-        diff_pixels = np.count_nonzero(diff_np)
-        diff_percentage = (diff_pixels / total_pixels) * 100
+        # Combine into perceptual difference
+        diff_gray_np = diff_r + diff_g + diff_b
 
-        # Create visualization with red highlights
-        # Convert difference to grayscale to find changed areas
-        diff_gray = diff.convert('L')
-        diff_gray_np = np.array(diff_gray)
+        # Apply Gaussian blur to reduce noise and minor antialiasing differences
+        from scipy.ndimage import gaussian_filter
+        diff_gray_np = gaussian_filter(diff_gray_np, sigma=1.5)
 
-        # Create a mask for differences (threshold to reduce noise)
-        threshold = 30
-        mask = diff_gray_np > threshold
+        # Create a mask for significant differences
+        mask = diff_gray_np > sensitivity
+
+        # Apply morphological operations to reduce noise
+        from scipy.ndimage import binary_opening, binary_closing
+        # Remove small noise
+        mask = binary_opening(mask, structure=np.ones((3, 3)))
+        # Fill small holes
+        mask = binary_closing(mask, structure=np.ones((5, 5)))
+
+        # Calculate difference percentage based on significant differences only
+        significant_diff_pixels = np.sum(mask)
+        total_pixels = mask.shape[0] * mask.shape[1]
+        diff_percentage = (significant_diff_pixels / total_pixels) * 100
+
+        # Find contiguous regions and filter by minimum area
+        labeled_mask = self._find_difference_regions(mask, min_size=min_area)
 
         # Create overlay image
         overlay = img2.copy()
-        overlay_draw = ImageDraw.Draw(overlay, 'RGBA')
 
-        # Highlight differences in red with transparency
-        mask_pil = Image.fromarray((mask * 255).astype(np.uint8))
+        # Only draw if there are significant differences
+        if labeled_mask:
+            # Create red overlay
+            red_overlay = Image.new('RGBA', img2.size, (255, 0, 0, 0))
+            red_draw = ImageDraw.Draw(red_overlay)
 
-        # Create red overlay
-        red_overlay = Image.new('RGBA', img2.size, (255, 0, 0, 0))
-        red_draw = ImageDraw.Draw(red_overlay)
+            for region in labeled_mask:
+                x1, y1, x2, y2 = region
+                red_draw.rectangle([x1, y1, x2, y2], fill=(255, 0, 0, 80), outline=(255, 0, 0, 200), width=2)
 
-        # Find contiguous regions of differences and draw rectangles
-        labeled_mask = self._find_difference_regions(mask)
-
-        for region in labeled_mask:
-            x1, y1, x2, y2 = region
-            red_draw.rectangle([x1, y1, x2, y2], fill=(255, 0, 0, 80), outline=(255, 0, 0, 200), width=2)
-
-        # Composite the overlay
-        overlay = overlay.convert('RGBA')
-        overlay = Image.alpha_composite(overlay, red_overlay)
-        overlay = overlay.convert('RGB')
+            # Composite the overlay
+            overlay = overlay.convert('RGBA')
+            overlay = Image.alpha_composite(overlay, red_overlay)
+            overlay = overlay.convert('RGB')
 
         return overlay, diff_percentage
 
@@ -177,13 +190,16 @@ class PDFComparer:
 
         return regions
 
-    def compare_pdfs(self, pdf1_bytes: bytes, pdf2_bytes: bytes) -> List[Tuple[Image.Image, Image.Image, Image.Image, float]]:
+    def compare_pdfs(self, pdf1_bytes: bytes, pdf2_bytes: bytes,
+                    sensitivity: float = 50.0, min_area: int = 100) -> List[Tuple[Image.Image, Image.Image, Image.Image, float]]:
         """
         Compare two PDFs page by page
 
         Args:
             pdf1_bytes: First PDF as bytes
             pdf2_bytes: Second PDF as bytes
+            sensitivity: Threshold for detecting differences (0-255, higher = less sensitive)
+            min_area: Minimum area in pixels for a difference region
 
         Returns:
             List of tuples (img1, img2, diff_img, diff_percentage) for each page
@@ -207,7 +223,7 @@ class PDFComparer:
             else:
                 img2 = images2[i]
 
-            diff_img, diff_pct = self.compare_images(img1, img2)
+            diff_img, diff_pct = self.compare_images(img1, img2, sensitivity, min_area)
             results.append((img1, img2, diff_img, diff_pct))
 
         return results
