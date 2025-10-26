@@ -42,6 +42,8 @@ def main():
     if 'zoom_factor' not in st.session_state:
         st.session_state.zoom_factor = 2.0
         logger.info("Initialized zoom_factor in session state with default value 2.0")
+    if 'zones_imported' not in st.session_state:
+        st.session_state.zones_imported = False
 
     # Sidebar for settings
     with st.sidebar:
@@ -262,6 +264,7 @@ def main():
                             if x2 > x1 and y2 > y1:
                                 new_zone = (int(x1), int(y1), int(x2), int(y2))
                                 st.session_state.exclusion_zones.append(new_zone)
+                                st.session_state.zones_imported = False  # Reset flag since zones changed
                                 logger.info(f"Zone added: {new_zone}")
                                 st.success("Zone added!")
                                 st.rerun()
@@ -283,6 +286,7 @@ def main():
                                 if st.button("🗑️", key=f"del_{i}"):
                                     deleted_zone = st.session_state.exclusion_zones[i]
                                     st.session_state.exclusion_zones.pop(i)
+                                    st.session_state.zones_imported = False  # Reset flag since zones changed
                                     logger.info(f"Zone {i+1} deleted: {deleted_zone}")
                                     st.rerun()
                             st.divider()
@@ -306,21 +310,31 @@ def main():
                         key='zones_upload'
                     )
                     if uploaded_zones:
-                        try:
-                            zones_data = json.load(uploaded_zones)
-                            logger.info(f"Importing {len(zones_data)} zones from {uploaded_zones.name}")
-                            st.session_state.exclusion_zones = zones_data
-                            logger.info(f"Successfully imported zones: {zones_data}")
-                            st.success(f"{len(zones_data)} zones imported!")
-                            st.rerun()
-                        except Exception as e:
-                            logger.error(f"Error importing zones from {uploaded_zones.name}: {str(e)}", exc_info=True)
-                            st.error(f"Error importing: {e}")
+                        # Use file name + size as unique identifier to prevent re-importing same file
+                        file_id = f"{uploaded_zones.name}_{uploaded_zones.size}"
+
+                        # Only import if this is a new file (not already imported)
+                        if not st.session_state.zones_imported or st.session_state.get('last_imported_file') != file_id:
+                            try:
+                                zones_data = json.load(uploaded_zones)
+                                logger.info(f"Importing {len(zones_data)} zones from {uploaded_zones.name}")
+                                st.session_state.exclusion_zones = zones_data
+                                st.session_state.zones_imported = True
+                                st.session_state.last_imported_file = file_id
+                                logger.info(f"Successfully imported zones: {zones_data}")
+                                st.success(f"{len(zones_data)} zones imported!")
+                                st.rerun()
+                            except Exception as e:
+                                logger.error(f"Error importing zones from {uploaded_zones.name}: {str(e)}", exc_info=True)
+                                st.error(f"Error importing: {e}")
+                        else:
+                            st.info(f"✅ Zones already imported from {uploaded_zones.name}")
 
                     # Clear zones
                     if st.button("🗑️ Clear All Zones"):
                         zone_count = len(st.session_state.exclusion_zones)
                         st.session_state.exclusion_zones = []
+                        st.session_state.zones_imported = False  # Reset flag since zones cleared
                         logger.info(f"Cleared all {zone_count} zones")
                         st.rerun()
 
